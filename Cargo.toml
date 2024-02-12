@@ -51,16 +51,16 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
     "fmt",
     "std",
 ] }
-twilight-cache-inmemory = { git = "https://github.com/Gelbpunkt/twilight.git", branch = "15-custom", default-features = false }
-twilight-gateway = { git = "https://github.com/Gelbpunkt/twilight.git", branch = "15-custom", default-features = false, features = [
+twilight-cache-inmemory = { git = "https://github.com/anti-raid/twilight-for-gateway-proxy.git", branch = "15-custom", default-features = false }
+twilight-gateway = { git = "https://github.com/anti-raid/twilight-for-gateway-proxy.git", branch = "15-custom", default-features = false, features = [
     "rustls-webpki-roots",
 ] }
-twilight-gateway-queue = { git = "https://github.com/Gelbpunkt/twilight.git", branch = "15-custom", default-features = false, features = [
+twilight-gateway-queue = { git = "https://github.com/anti-raid/twilight-for-gateway-proxy.git", branch = "15-custom", default-features = false, features = [
 ] }
-twilight-http = { git = "https://github.com/Gelbpunkt/twilight.git", branch = "15-custom", default-features = false, features = [
+twilight-http = { git = "https://github.com/anti-raid/twilight-for-gateway-proxy.git", branch = "15-custom", default-features = false, features = [
     "rustls-webpki-roots",
 ] }
-twilight-model = { git = "https://github.com/Gelbpunkt/twilight.git", branch = "15-custom" }
+twilight-model = { git = "https://github.com/anti-raid/twilight-for-gateway-proxy.git", branch = "15-custom" }
 
 [features]
 default = ["simd"]
