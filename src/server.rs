@@ -22,7 +22,10 @@ use tokio::{
         oneshot,
     },
 };
-use tokio_websockets::{Error, Limits, Message, ServerBuilder};
+use tokio_tungstenite::{
+    tungstenite::{protocol::Role, Error, Message},
+    WebSocketStream,
+};
 use tracing::{debug, error, info, trace, warn};
 
 use std::{convert::Infallible, future::ready, net::SocketAddr, sync::Arc};
@@ -87,10 +90,10 @@ where
     if use_zlib {
         compress_full(&mut compress, &mut compression_buffer, HELLO.as_bytes());
 
-        sink.send(Message::binary(Bytes::from(compression_buffer.clone())))
+        sink.send(Message::Binary(compression_buffer.clone()))
             .await?;
     } else {
-        sink.send(Message::text(HELLO.to_string())).await?;
+        sink.send(Message::Text(HELLO.to_string())).await?;
     }
 
     if compress_rx.await == Ok(Some(true)) {
@@ -102,10 +105,9 @@ where
 
         if use_zlib {
             compression_buffer.clear();
-            compress_full(&mut compress, &mut compression_buffer, &msg.into_payload());
+            compress_full(&mut compress, &mut compression_buffer, &msg.into_data());
 
-            sink.send(Message::binary(Bytes::from(compression_buffer.clone())))
-                .await?;
+            sink.send(Message::Binary(compression_buffer.clone())).await?;
         } else {
             sink.send(msg).await?;
         }
@@ -141,7 +143,7 @@ async fn forward_shard(
 
         if let Ok(serialized) = to_string(&ready_payload) {
             debug!("[Shard {shard_id}] Sending newly created READY");
-            let _res = stream_writer.send(Message::text(serialized));
+            let _res = stream_writer.send(Message::Text(serialized));
         };
 
         // Send GUILD_CREATE/GUILD_DELETEs based on guild availability
@@ -150,11 +152,11 @@ async fn forward_shard(
                 trace!(
                     "[Shard {shard_id}] Sending newly created GUILD_CREATE/GUILD_DELETE payload",
                 );
-                let _res = stream_writer.send(Message::text(serialized));
+                let _res = stream_writer.send(Message::Text(serialized));
             };
         }
     } else {
-        let _res = stream_writer.send(Message::text(RESUMED.to_string()));
+        let _res = stream_writer.send(Message::Text(RESUMED.to_string()));
     }
 
     // For formatting the sequence number as a string, reuse a buffer
@@ -173,7 +175,7 @@ async fn forward_shard(
                 payload.replace_range(sequence_range, buffer.format(seq));
             }
 
-            let _res = stream_writer.send(Message::text(payload));
+            let _res = stream_writer.send(Message::Text(payload));
         } else if let Err(RecvError::Lagged(amt)) = res {
             warn!("[Shard {shard_id}] Client is {amt} events behind!");
         }
@@ -195,11 +197,8 @@ pub async fn handle_client<S: 'static + AsyncRead + AsyncWrite + Unpin + Send>(
     // We need to know which shard this client is connected to in order to send messages to it
     let mut shard_sender = None;
 
-    let ws_conn = ServerBuilder::new()
-        .limits(Limits::unlimited())
-        .serve(stream);
-
-    let (sink, mut stream) = ws_conn.split();
+    let stream = WebSocketStream::from_raw_socket(stream, Role::Server, None).await;
+    let (sink, mut stream) = stream.split();
 
     // Write all messages from a queue to the sink
     let (stream_writer, stream_receiver) = unbounded_channel::<Message>();
@@ -215,14 +214,12 @@ pub async fn handle_client<S: 'static + AsyncRead + AsyncWrite + Unpin + Send>(
     let mut shard_forward_task = None;
 
     while let Some(Ok(msg)) = stream.next().await {
-        if !msg.is_text() && !msg.is_binary() {
-            continue;
-        }
+        let data = msg.into_data();
 
         #[cfg(feature = "simd-json")]
-        let mut payload = unsafe { msg.as_text().unwrap_unchecked().to_owned() };
+        let mut payload = unsafe { String::from_utf8_unchecked(data) };
         #[cfg(not(feature = "simd-json"))]
-        let payload = unsafe { msg.as_text().unwrap_unchecked() };
+        let payload = unsafe { String::from_utf8_unchecked(data) };
 
         let Some(deserializer) = GatewayEvent::from_json(&payload) else {
             continue;
@@ -231,7 +228,7 @@ pub async fn handle_client<S: 'static + AsyncRead + AsyncWrite + Unpin + Send>(
         match deserializer.op() {
             1 => {
                 trace!("[{addr}] Sending heartbeat ACK");
-                let _res = stream_writer.send(Message::text(HEARTBEAT_ACK.to_string()));
+                let _res = stream_writer.send(Message::Text(HEARTBEAT_ACK.to_string()));
             }
             2 => {
                 debug!("[{addr}] Client is identifying");
@@ -341,16 +338,16 @@ pub async fn handle_client<S: 'static + AsyncRead + AsyncWrite + Unpin + Send>(
 
                         let _res = sender.send(session.compress);
                     } else {
-                        let _res = stream_writer.send(Message::text(INVALID_SESSION.to_string()));
+                        let _res = stream_writer.send(Message::Text(INVALID_SESSION.to_string()));
                     }
                 } else {
-                    let _res = stream_writer.send(Message::text(INVALID_SESSION.to_string()));
+                    let _res = stream_writer.send(Message::Text(INVALID_SESSION.to_string()));
                 }
             }
             _ => {
                 if let Some(sender) = &shard_sender {
                     trace!("[{addr}] Sending {payload:?} to Discord directly");
-                    let _res = sender.send(payload.to_string());
+                    let _res = sender.send(payload);
                 } else {
                     warn!("[{addr}] Client attempted to send payload before IDENTIFY",);
                 }
